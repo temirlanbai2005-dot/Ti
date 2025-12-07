@@ -14,6 +14,7 @@ import {
 // Helper to create the Gemini client securely
 const createGeminiClient = () => {
   // Use process.env.API_KEY exclusively.
+  // Note: Vite config defines this from VITE_API_KEY
   if (!process.env.API_KEY) {
     console.error("API Key is missing. Make sure API_KEY is set in Environment Variables.");
     throw new Error("API Key is missing. Please check Environment Variables.");
@@ -35,24 +36,16 @@ const performGoogleSearch = async (query: string): Promise<string> => {
   try {
     const ai = createGeminiClient();
     
-    const prompt = `
-        QUERY: "${query}"
-        
-        INSTRUCTIONS:
-        1. Use the googleSearch tool to find the most recent information.
-        2. Return a summary of the SEARCH RESULTS.
-        3. Focus on facts, dates, numbers.
-    `;
-
-    const response = await ai.models.generateContent({ 
+    // In stable SDK, tools are defined in model config
+    const response = await ai.models.generateContent({
         model: "gemini-2.5-flash",
-        contents: prompt,
+        contents: `QUERY: "${query}"\nINSTRUCTIONS: Use the googleSearch tool to find facts. Return a summary.`,
         config: {
             tools: [{ googleSearch: {} }] 
         }
     });
-    
-    return response.text || "No results found.";
+
+    return response.text || "";
   } catch (error) {
     console.warn("Search Bridge failed:", error);
     return "Could not fetch online context. Ensure Cloud Gemini is active.";
@@ -74,11 +67,10 @@ export const generatePost = async ({
         Platform: ${platform}
         Language: ${settings.targetLanguage}
         Topic: ${topic}
-        
         Task: Write a viral social media post.
-        ${useSearch ? "IMPORTANT: Use Google Search to find the latest details about the topic before writing." : ""}
       `;
 
+      // Configure model with system instruction
       const response = await ai.models.generateContent({ 
           model: "gemini-2.5-flash",
           contents: prompt,
@@ -94,6 +86,7 @@ export const generatePost = async ({
       return `Error generating post: ${error.message || 'Unknown error'}. Check your API Key.`;
     }
   } else {
+    // Local / Custom Logic
     let finalPrompt = `
       You are an expert Social Media Copywriter for a 3D Artist.
       STYLE GUIDE: ${settings.userStyle}
@@ -116,9 +109,9 @@ export const generateCreativeIdea = async (settings: AppSettings): Promise<strin
     if (settings.llmSource === LLMSource.CloudGemini) {
         try {
             const ai = createGeminiClient();
-            const response = await ai.models.generateContent({ 
-                model: "gemini-2.5-flash", 
-                contents: prompt 
+            const response = await ai.models.generateContent({
+                model: "gemini-2.5-flash",
+                contents: prompt
             });
             return response.text || "";
         } catch (e) { return "Showcase a wireframe vs. render comparison."; }
@@ -132,11 +125,11 @@ export const translatePost = async (content: string, settings: AppSettings): Pro
     if (settings.llmSource === LLMSource.CloudGemini) {
         try {
             const ai = createGeminiClient();
-            const response = await ai.models.generateContent({ 
-                model: "gemini-2.5-flash", 
-                contents: prompt 
+            const response = await ai.models.generateContent({
+                model: "gemini-2.5-flash",
+                contents: prompt
             });
-            return response.text || content;
+            return response.text || "";
         } catch (e) { return content; }
     } else {
         return generateWithCustomAPI(prompt, settings, "You are a Professional Translator.");
@@ -148,9 +141,9 @@ export const analyzePostImprovement = async (content: string, platform: SocialPl
     if (settings.llmSource === LLMSource.CloudGemini) {
       try {
         const ai = createGeminiClient();
-        const response = await ai.models.generateContent({ 
-            model: "gemini-2.5-flash", 
-            contents: prompt 
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt
         });
         return response.text || "";
       } catch (e: any) { return "Analysis failed: " + e.message; }
@@ -190,6 +183,7 @@ export const analyzeTrends = async (settings: AppSettings, category: TrendCatego
       });
       
       const text = response.text || "";
+      
       const trends = parseJsonFromResponse(text);
       return trends.map(t => ({ ...t, category }));
     } catch (error: any) { 
@@ -262,8 +256,7 @@ interface TelegramCommandResponse {
 }
 
 export const checkTelegramCommands = async (settings: AppSettings, lastUpdateId: number): Promise<TelegramCommandResponse> => {
-    // This is kept for local dev or if client-side polling is re-enabled.
-    // In production on Render, the server.js handles this.
+    // Handled by server.js
     return { command: null, payload: null, nextUpdateId: lastUpdateId };
 };
 
@@ -277,11 +270,19 @@ export const analyzeImage = async (base64Image: string, settings: AppSettings): 
   try {
     const ai = createGeminiClient();
     
+    // Construct image part for stable SDK
+    const imagePart = {
+        inlineData: {
+            data: base64Image,
+            mimeType: "image/png"
+        }
+    };
+
     const response = await ai.models.generateContent({ 
         model: "gemini-2.5-flash",
         contents: {
             parts: [
-                { inlineData: { mimeType: "image/png", data: base64Image } },
+                imagePart, 
                 { text: `Analyze this 3D render. Target Language: ${settings.targetLanguage}` }
             ]
         },
@@ -338,7 +339,7 @@ export const generateGrowthAdvice = async (input: string, mode: 'mentor' | 'comp
           model: "gemini-2.5-flash",
           contents: prompt,
           config: {
-            systemInstruction: SYSTEM_INSTRUCTION_GROWTH
+              systemInstruction: SYSTEM_INSTRUCTION_GROWTH
           }
       });
       return response.text || "";
