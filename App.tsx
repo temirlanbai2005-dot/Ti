@@ -86,8 +86,8 @@ const App: React.FC = () => {
       if(!silent) setIsScanning(false);
   };
 
-  // NOTE: Client-side polling is DISABLED because server.js handles it now 24/7.
-  // If we kept this, both the browser and server would try to read messages, causing conflicts.
+  // CLIENT SIDE POLLING DISABLED
+  // We rely on server.js to handle the bot commands 24/7
   
   const renderContent = () => {
     switch (currentMode) {
@@ -135,7 +135,11 @@ const App: React.FC = () => {
         <div className="p-6 border-t border-slate-800">
           <div className="text-xs text-slate-500 hidden md:block">
             <p>Source: {settings.llmSource}</p>
-            {settings.telegramBotToken && <p className="text-emerald-400 flex items-center gap-1 mt-1">● Bot Active (Server)</p>}
+            {settings.telegramBotToken ? (
+                 <p className="text-emerald-400 flex items-center gap-1 mt-1">● Server Bot Active</p>
+            ) : (
+                 <p className="text-orange-400 flex items-center gap-1 mt-1">● Setup Bot in Env</p>
+            )}
           </div>
         </div>
       </nav>
