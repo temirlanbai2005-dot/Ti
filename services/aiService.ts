@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { AppSettings, LLMSource, SocialPlatform, TrendItem, TrendCategory } from "../types";
 import { 
@@ -14,11 +13,11 @@ import {
 
 // Helper to create the Gemini client securely
 const createGeminiClient = () => {
-  // The API key must be obtained exclusively from the environment variable process.env.API_KEY.
+  // The API key must be obtained exclusively from the environment variable process.env.API_KEY
   const apiKey = process.env.API_KEY;
   
   if (!apiKey) {
-    console.error("API Key is missing. Make sure API_KEY is set in environment variables.");
+    console.error("API Key is missing.");
     throw new Error("API Key is missing.");
   }
   return new GoogleGenAI({ apiKey });
@@ -58,7 +57,7 @@ const performGoogleSearch = async (query: string): Promise<string> => {
     return response.text || "No search results found.";
   } catch (error) {
     console.warn("Search Bridge failed:", error);
-    return "Could not fetch online context due to connection error.";
+    return "Could not fetch online context. Ensure Cloud Gemini is active.";
   }
 };
 
@@ -92,7 +91,7 @@ export const generatePost = async ({
       return response.text || "Error: No content generated.";
     } catch (error: any) {
       console.error("Gemini API Error:", error);
-      return `Error generating post: ${error.message}`;
+      return `Error generating post: ${error.message}. Check your API Key.`;
     }
   } else {
     let finalPrompt = `
@@ -141,9 +140,11 @@ export const translatePost = async (content: string, settings: AppSettings): Pro
 export const analyzePostImprovement = async (content: string, platform: SocialPlatform, settings: AppSettings): Promise<string> => {
     const prompt = `Analyze this ${platform} post for a 3D artist: "${content}". Target Language: ${settings.targetLanguage}. Give viral score (1-10) and specific improvements.`;
     if (settings.llmSource === LLMSource.CloudGemini) {
-      const ai = createGeminiClient();
-      const response = await ai.models.generateContent({model: "gemini-2.5-flash", contents: prompt});
-      return response.text || "Could not analyze.";
+      try {
+        const ai = createGeminiClient();
+        const response = await ai.models.generateContent({model: "gemini-2.5-flash", contents: prompt});
+        return response.text || "Could not analyze.";
+      } catch (e: any) { return "Analysis failed: " + e.message; }
     } else {
       return generateWithCustomAPI(prompt, settings, "You are a Social Media Analyst.");
     }
@@ -177,7 +178,10 @@ export const analyzeTrends = async (settings: AppSettings, category: TrendCatego
       });
       const trends = parseJsonFromResponse(response.text);
       return trends.map(t => ({ ...t, category }));
-    } catch (error: any) { return []; }
+    } catch (error: any) { 
+        console.error("Trend Analysis Error", error);
+        return []; 
+    }
   } else {
     try {
       const rawSearchData = await performGoogleSearch(query);
@@ -346,13 +350,15 @@ export const generateBusinessResponse = async (input: string, type: 'chat' | 'pr
   `;
   
   if (settings.llmSource === LLMSource.CloudGemini) {
-      const ai = createGeminiClient();
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: { systemInstruction: SYSTEM_INSTRUCTION_BUSINESS }
-      });
-      return response.text || "No response generated.";
+      try {
+        const ai = createGeminiClient();
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: { systemInstruction: SYSTEM_INSTRUCTION_BUSINESS }
+        });
+        return response.text || "No response generated.";
+      } catch (e: any) { return "Business AI Error: " + e.message; }
   } else {
       return generateWithCustomAPI(prompt, settings, SYSTEM_INSTRUCTION_BUSINESS);
   }
@@ -401,6 +407,12 @@ async function generateWithCustomAPI(prompt: string, settings: AppSettings, syst
       messages: [{ role: "system", content: systemInstruction }, { role: "user", content: prompt }],
       stream: false
     };
+    
+    // Check if user is trying to hit localhost from a secure deployment
+    if (window.location.protocol === 'https:' && settings.customApiUrl.includes('localhost')) {
+       return "Custom API Error: Cannot access Localhost (HTTP) from Render (HTTPS). This is a browser security restriction (Mixed Content). Please switch to 'Cloud Gemini' in Settings, or use a tunneling service (like Ngrok) for your local LLM.";
+    }
+
     const response = await fetch(settings.customApiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${settings.customApiKey || 'dummy-key'}` },
@@ -408,5 +420,7 @@ async function generateWithCustomAPI(prompt: string, settings: AppSettings, syst
     });
     const data = await response.json();
     return data.choices?.[0]?.message?.content || "No response.";
-  } catch (error: any) { return `Custom API Error: ${error.message}`; }
+  } catch (error: any) { 
+      return `Custom API Error: ${error.message}. If using Local LLM on Render, ensure you are not blocked by Mixed Content/CORS.`; 
+  }
 }
