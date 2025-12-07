@@ -13,14 +13,12 @@ import {
 
 // Helper to create the Gemini client securely
 const createGeminiClient = () => {
-  // Use process.env.API_KEY exclusively as per Google GenAI SDK guidelines
-  const apiKey = process.env.API_KEY;
-  
-  if (!apiKey) {
+  // Use process.env.API_KEY exclusively.
+  if (!process.env.API_KEY) {
     console.error("API Key is missing. Make sure API_KEY is set in Environment Variables.");
     throw new Error("API Key is missing. Please check Environment Variables.");
   }
-  return new GoogleGenAI({ apiKey });
+  return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 interface GeneratePostParams {
@@ -31,33 +29,33 @@ interface GeneratePostParams {
 }
 
 /**
- * Performs a raw Google Search using Gemini Flash as a bridge.
+ * Performs a raw Google Search using Gemini as a bridge.
  */
 const performGoogleSearch = async (query: string): Promise<string> => {
   try {
     const ai = createGeminiClient();
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: `
-        You are a Search Engine Interface.
+    
+    const prompt = `
         QUERY: "${query}"
         
         INSTRUCTIONS:
-        1. Use the 'googleSearch' tool to find the most recent, relevant, and high-traffic information.
-        2. Return a comprehensive summary of the SEARCH RESULTS.
-        3. Focus on facts, dates, numbers, and specific trend names.
-        4. Do NOT write a social media post. Just output the raw information found.
-      `,
-      config: {
-        tools: [{ googleSearch: {} }],
-        thinkingConfig: { thinkingBudget: 0 } 
-      }
-    });
+        1. Use the googleSearch tool to find the most recent information.
+        2. Return a summary of the SEARCH RESULTS.
+        3. Focus on facts, dates, numbers.
+    `;
 
-    return response.text || "No search results found.";
+    const response = await ai.models.generateContent({ 
+        model: "gemini-2.5-flash",
+        contents: prompt,
+        config: {
+            tools: [{ googleSearch: {} }] 
+        }
+    });
+    
+    return response.text || "No results found.";
   } catch (error) {
     console.warn("Search Bridge failed:", error);
-    return "Could not fetch online context. Ensure Cloud Gemini is active and API Key is valid.";
+    return "Could not fetch online context. Ensure Cloud Gemini is active.";
   }
 };
 
@@ -70,6 +68,7 @@ export const generatePost = async ({
   if (settings.llmSource === LLMSource.CloudGemini) {
     try {
       const ai = createGeminiClient();
+
       const prompt = `
         User Style: ${settings.userStyle}
         Platform: ${platform}
@@ -80,18 +79,19 @@ export const generatePost = async ({
         ${useSearch ? "IMPORTANT: Use Google Search to find the latest details about the topic before writing." : ""}
       `;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: {
-          systemInstruction: SYSTEM_INSTRUCTION_GENERATOR,
-          tools: useSearch ? [{ googleSearch: {} }] : [],
-        }
+      const response = await ai.models.generateContent({ 
+          model: "gemini-2.5-flash",
+          contents: prompt,
+          config: {
+              systemInstruction: SYSTEM_INSTRUCTION_GENERATOR,
+              tools: useSearch ? [{ googleSearch: {} }] : []
+          }
       });
-      return response.text || "Error: No content generated.";
+
+      return response.text || "";
     } catch (error: any) {
       console.error("Gemini API Error:", error);
-      return `Error generating post: ${error.message}. Check your API Key in Settings.`;
+      return `Error generating post: ${error.message || 'Unknown error'}. Check your API Key.`;
     }
   } else {
     let finalPrompt = `
@@ -104,7 +104,6 @@ export const generatePost = async ({
     `;
 
     if (useSearch) {
-      // Note: This still requires Gemini to perform the search first
       const googleResults = await performGoogleSearch(topic);
       finalPrompt += `\n\n=== REAL-TIME GOOGLE SEARCH DATA ===\n${googleResults}\n========================================`;
     }
@@ -117,8 +116,11 @@ export const generateCreativeIdea = async (settings: AppSettings): Promise<strin
     if (settings.llmSource === LLMSource.CloudGemini) {
         try {
             const ai = createGeminiClient();
-            const response = await ai.models.generateContent({model: "gemini-2.5-flash", contents: prompt});
-            return response.text || "Showcase a wireframe vs. render comparison.";
+            const response = await ai.models.generateContent({ 
+                model: "gemini-2.5-flash", 
+                contents: prompt 
+            });
+            return response.text || "";
         } catch (e) { return "Showcase a wireframe vs. render comparison."; }
     } else {
         return generateWithCustomAPI(prompt, settings, "You are a Creative Director.");
@@ -130,7 +132,10 @@ export const translatePost = async (content: string, settings: AppSettings): Pro
     if (settings.llmSource === LLMSource.CloudGemini) {
         try {
             const ai = createGeminiClient();
-            const response = await ai.models.generateContent({model: "gemini-2.5-flash", contents: prompt});
+            const response = await ai.models.generateContent({ 
+                model: "gemini-2.5-flash", 
+                contents: prompt 
+            });
             return response.text || content;
         } catch (e) { return content; }
     } else {
@@ -143,8 +148,11 @@ export const analyzePostImprovement = async (content: string, platform: SocialPl
     if (settings.llmSource === LLMSource.CloudGemini) {
       try {
         const ai = createGeminiClient();
-        const response = await ai.models.generateContent({model: "gemini-2.5-flash", contents: prompt});
-        return response.text || "Could not analyze.";
+        const response = await ai.models.generateContent({ 
+            model: "gemini-2.5-flash", 
+            contents: prompt 
+        });
+        return response.text || "";
       } catch (e: any) { return "Analysis failed: " + e.message; }
     } else {
       return generateWithCustomAPI(prompt, settings, "You are a Social Media Analyst.");
@@ -154,7 +162,6 @@ export const analyzePostImprovement = async (content: string, platform: SocialPl
 export const analyzeTrends = async (settings: AppSettings, category: TrendCategory = TrendCategory.General): Promise<TrendItem[]> => {
   const jsonSchemaInstruction = `Output requirements: Return ONLY the raw JSON array inside a \`\`\`json block. Structure: [{ "platform": "Instagram", "trendName": "...", "description": "...", "hypeReason": "...", "growthMetric": "...", "vibe": "..." }]`;
   
-  // Select system instruction and query based on category
   let systemInstruction = SYSTEM_INSTRUCTION_TRENDS;
   let query = "Find latest 3D Art trends.";
 
@@ -172,12 +179,18 @@ export const analyzeTrends = async (settings: AppSettings, category: TrendCatego
   if (settings.llmSource === LLMSource.CloudGemini) {
     try {
       const ai = createGeminiClient();
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash", 
-        contents: `${query}\n${jsonSchemaInstruction}`,
-        config: { systemInstruction: systemInstruction, tools: [{ googleSearch: {} }] }
+      
+      const response = await ai.models.generateContent({ 
+          model: "gemini-2.5-flash",
+          contents: `${query}\n${jsonSchemaInstruction}`,
+          config: {
+              systemInstruction: systemInstruction,
+              tools: [{ googleSearch: {} }]
+          }
       });
-      const trends = parseJsonFromResponse(response.text);
+      
+      const text = response.text || "";
+      const trends = parseJsonFromResponse(text);
       return trends.map(t => ({ ...t, category }));
     } catch (error: any) { 
         console.error("Trend Analysis Error", error);
@@ -198,7 +211,6 @@ export const analyzeTrends = async (settings: AppSettings, category: TrendCatego
 
 export const sendTelegramMessage = async (settings: AppSettings, text: string) => {
     if (!settings.telegramBotToken || !settings.telegramChatId) return;
-    
     try {
         await fetch(`https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`, {
             method: 'POST',
@@ -210,7 +222,7 @@ export const sendTelegramMessage = async (settings: AppSettings, text: string) =
             })
         });
     } catch (e) {
-        console.error("Failed to send basic Telegram message", e);
+        console.error("Failed to send Telegram message", e);
     }
 };
 
@@ -222,7 +234,6 @@ export const sendTelegramNotification = async (settings: AppSettings, trend: Tre
     if (trend.category === TrendCategory.Formats) emoji = "🎬";
     if (trend.category === TrendCategory.Plots) emoji = "📝";
 
-    // Create a rich message template
     const message = `
 *📡 3D RADAR ALERT* | ${trend.category || 'General'}
 
@@ -240,19 +251,7 @@ ${trend.difficulty ? `⚠️ *Сложность:* ${trend.difficulty}` : ''}
 ${trend.vibe ? `✨ *Вайб:* ${trend.vibe}` : ''}
     `;
 
-    try {
-        await fetch(`https://api.telegram.org/bot${settings.telegramBotToken}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                chat_id: settings.telegramChatId,
-                text: message,
-                parse_mode: 'Markdown'
-            })
-        });
-    } catch (e) {
-        console.error("Failed to send Telegram notification", e);
-    }
+    await sendTelegramMessage(settings, message);
 };
 
 interface TelegramCommandResponse {
@@ -262,83 +261,41 @@ interface TelegramCommandResponse {
   chatId?: string;
 }
 
-/**
- * Checks Telegram Bot API for new messages (commands)
- */
 export const checkTelegramCommands = async (settings: AppSettings, lastUpdateId: number): Promise<TelegramCommandResponse> => {
-    if (!settings.telegramBotToken) return { command: null, payload: null, nextUpdateId: lastUpdateId };
-
-    try {
-        const response = await fetch(`https://api.telegram.org/bot${settings.telegramBotToken}/getUpdates?offset=${lastUpdateId + 1}&timeout=0`);
-        const data = await response.json();
-        
-        if (data.ok && data.result.length > 0) {
-            const lastUpdate = data.result[data.result.length - 1];
-            const text: string = lastUpdate.message?.text || "";
-            const chatId = lastUpdate.message?.chat?.id;
-
-            let command = null;
-            let payload = null;
-
-            if (text.startsWith("/task")) {
-                command = "add_task";
-                payload = text.replace("/task", "").trim();
-            } else if (text.startsWith("/note")) {
-                command = "add_note";
-                payload = text.replace("/note", "").trim();
-            } else if (text.startsWith("/list") || text.startsWith("/tasks")) {
-                command = "list_tasks";
-            } else if (text.startsWith("/done")) {
-                command = "done_task";
-                payload = text.replace("/done", "").trim();
-            } else if (text.startsWith("/trends") || text.startsWith("/check")) {
-                command = "check_trends";
-            } else if (text.startsWith("/idea")) {
-                command = "get_idea";
-            } else if (text.startsWith("/help")) {
-                command = "get_help";
-            } else if (text.startsWith("/start")) {
-                command = "start";
-            } else if (text.startsWith("/status")) {
-                command = "get_status";
-            }
-
-            return { command, payload, nextUpdateId: lastUpdate.update_id, chatId };
-        }
-    } catch (e) {
-        // Silent fail for polling
-    }
+    // This is kept for local dev or if client-side polling is re-enabled.
+    // In production on Render, the server.js handles this.
     return { command: null, payload: null, nextUpdateId: lastUpdateId };
 };
 
 // --- NEW FEATURES ---
 
 export const analyzeImage = async (base64Image: string, settings: AppSettings): Promise<string> => {
-  // Only Cloud Gemini supports vision reliably for this demo
   if (settings.llmSource !== LLMSource.CloudGemini) {
      return "Visual Audit is only available with Cloud Gemini mode enabled.";
   }
   
   try {
     const ai = createGeminiClient();
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: {
-        parts: [
-          { inlineData: { mimeType: "image/png", data: base64Image } },
-          { text: `Analyze this 3D render. Target Language: ${settings.targetLanguage}` }
-        ]
-      },
-      config: { systemInstruction: SYSTEM_INSTRUCTION_CRITIQUE }
+    
+    const response = await ai.models.generateContent({ 
+        model: "gemini-2.5-flash",
+        contents: {
+            parts: [
+                { inlineData: { mimeType: "image/png", data: base64Image } },
+                { text: `Analyze this 3D render. Target Language: ${settings.targetLanguage}` }
+            ]
+        },
+        config: {
+            systemInstruction: SYSTEM_INSTRUCTION_CRITIQUE
+        }
     });
-    return response.text || "Could not analyze image.";
+    return response.text || "";
   } catch (e: any) {
     return `Error analyzing image: ${e.message}`;
   }
 };
 
 export const generateBusinessResponse = async (input: string, type: 'chat' | 'pricing' | 'contract', settings: AppSettings): Promise<string> => {
-  // Map internal types to system instruction modes
   let promptMode = "";
   if (type === 'chat') promptMode = "COMMUNICATION (Chat Mode)";
   if (type === 'pricing') promptMode = "PRICING ANALYST (Calculator Mode)";
@@ -353,12 +310,14 @@ export const generateBusinessResponse = async (input: string, type: 'chat' | 'pr
   if (settings.llmSource === LLMSource.CloudGemini) {
       try {
         const ai = createGeminiClient();
-        const response = await ai.models.generateContent({
+        const response = await ai.models.generateContent({ 
             model: "gemini-2.5-flash",
             contents: prompt,
-            config: { systemInstruction: SYSTEM_INSTRUCTION_BUSINESS }
+            config: {
+                systemInstruction: SYSTEM_INSTRUCTION_BUSINESS
+            }
         });
-        return response.text || "No response generated.";
+        return response.text || "";
       } catch (e: any) { return "Business AI Error: " + e.message; }
   } else {
       return generateWithCustomAPI(prompt, settings, SYSTEM_INSTRUCTION_BUSINESS);
@@ -375,12 +334,14 @@ export const generateGrowthAdvice = async (input: string, mode: 'mentor' | 'comp
   if (settings.llmSource === LLMSource.CloudGemini) {
     try {
       const ai = createGeminiClient();
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: { systemInstruction: SYSTEM_INSTRUCTION_GROWTH }
+      const response = await ai.models.generateContent({ 
+          model: "gemini-2.5-flash",
+          contents: prompt,
+          config: {
+            systemInstruction: SYSTEM_INSTRUCTION_GROWTH
+          }
       });
-      return response.text || "No advice generated.";
+      return response.text || "";
     } catch (e: any) {
       return `Error: ${e.message}`;
     }
@@ -409,10 +370,8 @@ async function generateWithCustomAPI(prompt: string, settings: AppSettings, syst
       stream: false
     };
     
-    // Check if user is trying to hit localhost from a secure deployment
-    // This is the most common cause of "NetworkError" on Cloud Deployments
     if (window.location.protocol === 'https:' && settings.customApiUrl.includes('localhost')) {
-       return "🛑 CONFIGURATION ERROR: You are running this app on the Cloud (Render/HTTPS), but trying to access a Local LLM (localhost). This is blocked by browser security. \n\n✅ SOLUTION: Go to Settings -> Select 'Cloud Gemini'.";
+       return "🛑 CONFIGURATION ERROR: You are running on Cloud (HTTPS) but trying to access Localhost. Use Cloud Gemini or a public API.";
     }
 
     const response = await fetch(settings.customApiUrl, {
@@ -423,6 +382,6 @@ async function generateWithCustomAPI(prompt: string, settings: AppSettings, syst
     const data = await response.json();
     return data.choices?.[0]?.message?.content || "No response.";
   } catch (error: any) { 
-      return `Custom API Error: ${error.message}. (Did you select 'Local LLM' by accident in Settings?)`; 
+      return `Custom API Error: ${error.message}`; 
   }
 }
