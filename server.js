@@ -1,6 +1,6 @@
 import express from 'express';
 import fetch from 'node-fetch';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -26,16 +26,16 @@ let lastUpdateId = 0;
 const generateAIResponse = async (prompt) => {
     if (!API_KEY) return "Error: Server API_KEY is missing.";
     try {
-        const ai = new GoogleGenAI({ apiKey: API_KEY });
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-        });
-        // Correctly access text property (not function)
-        return response.text || "No response.";
+        const genAI = new GoogleGenerativeAI(API_KEY);
+        // Using gemini-1.5-flash as it is the current standard for stable SDK
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        
+        const result = await model.generateContent(prompt);
+        const response = await result.response;
+        return response.text() || "No response.";
     } catch (e) {
         console.error("AI Error:", e);
-        return "AI Service Unavailable.";
+        return "AI Service Unavailable. Check API Key.";
     }
 };
 
