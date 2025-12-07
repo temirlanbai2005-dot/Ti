@@ -1,4 +1,4 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import { AppSettings, LLMSource, SocialPlatform, TrendItem, TrendCategory } from "../types";
 import { 
   SYSTEM_INSTRUCTION_GENERATOR, 
@@ -22,6 +22,14 @@ const createGeminiClient = () => {
   return new GoogleGenerativeAI(process.env.API_KEY);
 };
 
+// Disable safety filters to prevent blocking "viral" or "edgy" content
+const SAFETY_SETTINGS = [
+  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+];
+
 interface GeneratePostParams {
   topic: string;
   platform: SocialPlatform;
@@ -31,17 +39,12 @@ interface GeneratePostParams {
 
 /**
  * Performs a raw Google Search using Gemini as a bridge.
- * Note: Tools support in stable SDK depends on the model version.
  */
 const performGoogleSearch = async (query: string): Promise<string> => {
   try {
     const genAI = createGeminiClient();
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
-    // Fallback search simulation if tool is not strictly bound
-    // For stable reliability, we rely on the model's internal knowledge or prompt engineering
-    // unless the 'tools' config is explicitly supported by the specific model version deployed.
-    // Here we use a standard prompt extraction.
     const result = await model.generateContent(`QUERY: "${query}"\nProvide a factual summary based on recent knowledge.`);
     const response = await result.response;
     return response.text();
@@ -69,10 +72,10 @@ export const generatePost = async ({
         Task: Write a viral social media post.
       `;
 
-      // Use systemInstruction in model config (Stable SDK)
       const model = genAI.getGenerativeModel({ 
         model: "gemini-1.5-flash", 
-        systemInstruction: SYSTEM_INSTRUCTION_GENERATOR 
+        systemInstruction: SYSTEM_INSTRUCTION_GENERATOR,
+        safetySettings: SAFETY_SETTINGS
       });
 
       const result = await model.generateContent(prompt);
@@ -106,7 +109,10 @@ export const generateCreativeIdea = async (settings: AppSettings): Promise<strin
     if (settings.llmSource === LLMSource.CloudGemini) {
         try {
             const genAI = createGeminiClient();
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            const model = genAI.getGenerativeModel({ 
+                model: "gemini-1.5-flash",
+                safetySettings: SAFETY_SETTINGS
+            });
             const result = await model.generateContent(prompt);
             return result.response.text();
         } catch (e) { return "Showcase a wireframe vs. render comparison."; }
@@ -120,7 +126,10 @@ export const translatePost = async (content: string, settings: AppSettings): Pro
     if (settings.llmSource === LLMSource.CloudGemini) {
         try {
             const genAI = createGeminiClient();
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            const model = genAI.getGenerativeModel({ 
+                model: "gemini-1.5-flash",
+                safetySettings: SAFETY_SETTINGS
+            });
             const result = await model.generateContent(prompt);
             return result.response.text();
         } catch (e) { return content; }
@@ -134,7 +143,10 @@ export const analyzePostImprovement = async (content: string, platform: SocialPl
     if (settings.llmSource === LLMSource.CloudGemini) {
       try {
         const genAI = createGeminiClient();
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-1.5-flash",
+            safetySettings: SAFETY_SETTINGS
+        });
         const result = await model.generateContent(prompt);
         return result.response.text();
       } catch (e: any) { return "Analysis failed: " + e.message; }
@@ -165,7 +177,8 @@ export const analyzeTrends = async (settings: AppSettings, category: TrendCatego
       const genAI = createGeminiClient();
       const model = genAI.getGenerativeModel({ 
           model: "gemini-1.5-flash",
-          systemInstruction: systemInstruction
+          systemInstruction: systemInstruction,
+          safetySettings: SAFETY_SETTINGS
       });
       
       const result = await model.generateContent(`${query}\n${jsonSchemaInstruction}`);
@@ -258,7 +271,8 @@ export const analyzeImage = async (base64Image: string, settings: AppSettings): 
     const genAI = createGeminiClient();
     const model = genAI.getGenerativeModel({ 
         model: "gemini-1.5-flash",
-        systemInstruction: SYSTEM_INSTRUCTION_CRITIQUE
+        systemInstruction: SYSTEM_INSTRUCTION_CRITIQUE,
+        safetySettings: SAFETY_SETTINGS
     });
     
     // Construct image part for stable SDK
@@ -296,7 +310,8 @@ export const generateBusinessResponse = async (input: string, type: 'chat' | 'pr
         const genAI = createGeminiClient();
         const model = genAI.getGenerativeModel({ 
             model: "gemini-1.5-flash",
-            systemInstruction: SYSTEM_INSTRUCTION_BUSINESS
+            systemInstruction: SYSTEM_INSTRUCTION_BUSINESS,
+            safetySettings: SAFETY_SETTINGS
         });
 
         const result = await model.generateContent(prompt);
@@ -319,7 +334,8 @@ export const generateGrowthAdvice = async (input: string, mode: 'mentor' | 'comp
       const genAI = createGeminiClient();
       const model = genAI.getGenerativeModel({ 
           model: "gemini-1.5-flash",
-          systemInstruction: SYSTEM_INSTRUCTION_GROWTH
+          systemInstruction: SYSTEM_INSTRUCTION_GROWTH,
+          safetySettings: SAFETY_SETTINGS
       });
       const result = await model.generateContent(prompt);
       return result.response.text();
@@ -335,12 +351,17 @@ export const generateGrowthAdvice = async (input: string, mode: 'mentor' | 'comp
 
 const parseJsonFromResponse = (text: string | undefined): TrendItem[] => {
   if (!text) return [];
-  const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/```\n([\s\S]*?)\n```/) || [null, text];
-  const jsonString = jsonMatch[1] || "[]";
+  // Ensure we strip markdown code blocks if present
+  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/) || [null, text];
+  const jsonString = jsonMatch[1] || text;
+  
   try {
     const parsed = JSON.parse(jsonString);
     return Array.isArray(parsed) ? parsed : [];
-  } catch (e) { return []; }
+  } catch (e) { 
+      console.warn("JSON Parse Failed, raw text:", text);
+      return []; 
+  }
 };
 
 async function generateWithCustomAPI(prompt: string, settings: AppSettings, systemInstruction: string): Promise<string> {
