@@ -14,7 +14,14 @@ const PORT = process.env.PORT || 3000;
 // --- CONFIGURATION ---
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+// Try to get API KEY from various env possibilities
 const API_KEY = process.env.API_KEY || process.env.VITE_API_KEY;
+
+if (!API_KEY) {
+    console.warn("⚠️ WARNING: API_KEY is missing in Server Environment!");
+} else {
+    console.log("✅ API_KEY is configured.");
+}
 
 // Safety Settings to prevent empty responses on viral content
 const SAFETY_SETTINGS = [
@@ -30,22 +37,22 @@ let notes = [];
 let lastUpdateId = 0;
 
 // --- AI HELPER ---
-const generateAIResponse = async (prompt) => {
-    if (!API_KEY) return "Error: Server API_KEY is missing.";
+const generateAIResponse = async (prompt, systemInstruction = "") => {
+    if (!API_KEY) return "❌ Error: API_KEY is missing in server environment variables.";
     try {
         const genAI = new GoogleGenerativeAI(API_KEY);
-        // Using gemini-1.5-flash as it is the current standard for stable SDK
         const model = genAI.getGenerativeModel({ 
             model: "gemini-1.5-flash",
-            safetySettings: SAFETY_SETTINGS
+            safetySettings: SAFETY_SETTINGS,
+            systemInstruction: systemInstruction ? { role: "system", parts: [{ text: systemInstruction }] } : undefined
         });
         
         const result = await model.generateContent(prompt);
         const response = await result.response;
-        return response.text() || "No response.";
+        return response.text() || "⚠️ No response generated.";
     } catch (e) {
         console.error("AI Error:", e);
-        return "AI Service Unavailable. Check API Key.";
+        return `❌ AI Error: ${e.message}`;
     }
 };
 
@@ -75,6 +82,8 @@ const processCommands = async () => {
                 if (!text) continue;
 
                 console.log(`Received command: ${text}`);
+
+                // --- COMMAND HANDLERS ---
 
                 if (text.startsWith("/task")) {
                     const content = text.replace("/task", "").trim();
@@ -107,11 +116,40 @@ const processCommands = async () => {
                 }
                 else if (text.startsWith("/idea")) {
                     await sendTelegram("💡 *Генерирую идею...*");
-                    const idea = await generateAIResponse("Generate one unique, viral 3D art content idea for Instagram. Short & punchy.");
+                    const idea = await generateAIResponse("Generate one unique, viral 3D art content idea for Instagram. Short & punchy. Russian language.");
                     await sendTelegram(`💎 *Идея:*\n${idea}`);
                 }
-                else if (text.startsWith("/help")) {
-                     await sendTelegram(`🤖 *Бот активен (Сервер)*\n/task [текст]\n/note [текст]\n/list\n/done [номер]\n/idea`);
+                else if (text.startsWith("/trends")) {
+                    await sendTelegram("🔍 *Сканирую тренды...*");
+                    const prompt = `
+                        Act as a 3D Art Trend Analyst. 
+                        List 3 currently trending topics/styles/formats for 3D Artists (Blender/CGI).
+                        Format:
+                        1. **Name** - Short description.
+                        2. **Name** - Short description.
+                        3. **Name** - Short description.
+                        Language: Russian.
+                    `;
+                    const report = await generateAIResponse(prompt);
+                    await sendTelegram(`📈 *Тренды сейчас:*\n\n${report}`);
+                }
+                else if (text.startsWith("/status")) {
+                    const keyStatus = API_KEY ? "✅ Configured" : "❌ MISSING";
+                    const uptime = Math.floor(process.uptime());
+                    await sendTelegram(`📡 *Server Status*\n\n🔑 API Key: ${keyStatus}\n⏱ Uptime: ${uptime}s\n✅ Bot Active`);
+                }
+                else if (text.startsWith("/help") || text.startsWith("/start")) {
+                     await sendTelegram(
+`🤖 *Бот активен (Сервер)*
+
+📝 */task [текст]* — Добавить задачу
+📌 */note [текст]* — Заметка
+📋 */list* — Список
+✅ */done [номер]* — Выполнить
+💡 */idea* — Идея для поста
+📈 */trends* — Тренды сейчас
+📡 */status* — Проверка сервера`
+                     );
                 }
             }
         }
@@ -121,6 +159,7 @@ const processCommands = async () => {
 };
 
 // Start Polling Loop (Independent of requests)
+// Poll every 3 seconds
 setInterval(processCommands, 3000);
 
 // --- SERVER ROUTES ---
