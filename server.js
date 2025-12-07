@@ -14,7 +14,6 @@ const PORT = process.env.PORT || 3000;
 // --- CONFIGURATION ---
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-// Use VITE_API_KEY if API_KEY is missing (Render might set it differently)
 const API_KEY = process.env.API_KEY || process.env.VITE_API_KEY;
 
 // In-memory storage for the server bot (resets on deploy/restart)
