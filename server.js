@@ -1,6 +1,6 @@
 import express from 'express';
 import fetch from 'node-fetch';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -16,6 +16,14 @@ const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const API_KEY = process.env.API_KEY || process.env.VITE_API_KEY;
 
+// Safety Settings to prevent empty responses on viral content
+const SAFETY_SETTINGS = [
+  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+  { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+];
+
 // In-memory storage for the server bot (resets on deploy/restart)
 let tasks = [];
 let notes = [];
@@ -27,7 +35,10 @@ const generateAIResponse = async (prompt) => {
     try {
         const genAI = new GoogleGenerativeAI(API_KEY);
         // Using gemini-1.5-flash as it is the current standard for stable SDK
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ 
+            model: "gemini-1.5-flash",
+            safetySettings: SAFETY_SETTINGS
+        });
         
         const result = await model.generateContent(prompt);
         const response = await result.response;
