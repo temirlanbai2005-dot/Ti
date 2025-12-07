@@ -14,9 +14,10 @@ const PORT = process.env.PORT || 3000;
 // --- CONFIGURATION ---
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+// Use VITE_API_KEY if API_KEY is missing (Render might set it differently)
 const API_KEY = process.env.API_KEY || process.env.VITE_API_KEY;
 
-// In-memory storage for the server bot (resets on deploy)
+// In-memory storage for the server bot (resets on deploy/restart)
 let tasks = [];
 let notes = [];
 let lastUpdateId = 0;
@@ -30,7 +31,8 @@ const generateAIResponse = async (prompt) => {
             model: "gemini-2.5-flash",
             contents: prompt,
         });
-        return response.text() || "No response.";
+        // Correctly access text property (not function)
+        return response.text || "No response.";
     } catch (e) {
         console.error("AI Error:", e);
         return "AI Service Unavailable.";
@@ -88,14 +90,13 @@ const processCommands = async () => {
                     const active = tasks.filter(t => !t.done);
                     if (active[index]) {
                         active[index].done = true;
-                        // Update original array reference logic omitted for brevity, simpler to just mark object
                          await sendTelegram(`👍 Задача "${active[index].text}" выполнена!`);
                     } else {
-                        await sendTelegram("❌ Неверный номер.");
+                        await sendTelegram("❌ Неверный номер задачи.");
                     }
                 }
                 else if (text.startsWith("/idea")) {
-                    await sendTelegram("💡 *Думаю над идеей...*");
+                    await sendTelegram("💡 *Генерирую идею...*");
                     const idea = await generateAIResponse("Generate one unique, viral 3D art content idea for Instagram. Short & punchy.");
                     await sendTelegram(`💎 *Идея:*\n${idea}`);
                 }
@@ -105,7 +106,7 @@ const processCommands = async () => {
             }
         }
     } catch (e) {
-        console.error("Polling Error:", e.message);
+        // console.error("Polling Error:", e.message); 
     }
 };
 
@@ -117,7 +118,7 @@ setInterval(processCommands, 3000);
 // 1. Serve Static Assets (Frontend)
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// 2. Keep-Alive Endpoint
+// 2. Keep-Alive Endpoint (External pinger hits this)
 app.get('/ping', (req, res) => {
     res.status(200).send('alive');
 });
