@@ -37,8 +37,17 @@ const App: React.FC = () => {
       localStorage.setItem('app_settings', JSON.stringify(settings));
   }, [settings]);
 
-  // 2. Trend Logic Lifted
-  const [trends, setTrends] = useState<TrendItem[]>([]);
+  // 2. Trend Logic Lifted & PERSISTED
+  const [trends, setTrends] = useState<TrendItem[]>(() => {
+      const saved = localStorage.getItem('app_trends');
+      return saved ? JSON.parse(saved) : [];
+  });
+  
+  // Save trends whenever they change
+  useEffect(() => {
+      localStorage.setItem('app_trends', JSON.stringify(trends));
+  }, [trends]);
+
   const [activeTrendCategory, setActiveTrendCategory] = useState<TrendCategory>(TrendCategory.General);
   const [autoMonitor, setAutoMonitor] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
@@ -73,7 +82,7 @@ const App: React.FC = () => {
       try {
           const result = await analyzeTrends(settings, activeTrendCategory);
           if(result.length > 0) {
-              setTrends(result);
+              setTrends(result); // This triggers the useEffect to save to localStorage
               if(silent && settings.telegramBotToken) {
                   await sendTelegramNotification(settings, result[0]);
               }
