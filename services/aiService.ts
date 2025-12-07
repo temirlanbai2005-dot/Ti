@@ -14,16 +14,16 @@ import {
 // Helper to create the Gemini client securely
 const createGeminiClient = () => {
   // Use process.env.API_KEY exclusively.
-  // Note: Vite config defines this from VITE_API_KEY
+  // Note: Vite config defines this from VITE_API_KEY during build
   if (!process.env.API_KEY) {
-    console.error("API Key is missing. Make sure API_KEY is set in Environment Variables.");
-    throw new Error("API Key is missing. Please check Environment Variables.");
+    console.error("FATAL: API Key is missing in client.");
+    throw new Error("API Key is missing. Check your Settings or Environment Variables.");
   }
   return new GoogleGenerativeAI(process.env.API_KEY);
 };
 
 // Disable safety filters to prevent blocking "viral" or "edgy" content
-const SAFETY_SETTINGS = [
+export const SAFETY_SETTINGS = [
   { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
   { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
   { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -43,7 +43,7 @@ interface GeneratePostParams {
 const performGoogleSearch = async (query: string): Promise<string> => {
   try {
     const genAI = createGeminiClient();
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash", safetySettings: SAFETY_SETTINGS });
     
     const result = await model.generateContent(`QUERY: "${query}"\nProvide a factual summary based on recent knowledge.`);
     const response = await result.response;
@@ -83,7 +83,7 @@ export const generatePost = async ({
       return response.text();
     } catch (error: any) {
       console.error("Gemini API Error:", error);
-      return `Error generating post: ${error.message || 'Unknown error'}. Check your API Key.`;
+      return `Error generating post: ${error.message || 'Unknown error'}. Check your API Key in Settings.`;
     }
   } else {
     // Local / Custom Logic
@@ -115,7 +115,7 @@ export const generateCreativeIdea = async (settings: AppSettings): Promise<strin
             });
             const result = await model.generateContent(prompt);
             return result.response.text();
-        } catch (e) { return "Showcase a wireframe vs. render comparison."; }
+        } catch (e) { return "Showcase a wireframe vs. render comparison (Fallback)."; }
     } else {
         return generateWithCustomAPI(prompt, settings, "You are a Creative Director.");
     }
