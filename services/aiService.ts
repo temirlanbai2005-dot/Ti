@@ -14,9 +14,12 @@ import {
 
 // Helper to create the Gemini client securely
 const createGeminiClient = () => {
+  // The API key must be obtained exclusively from the environment variable process.env.API_KEY.
   const apiKey = process.env.API_KEY;
+  
   if (!apiKey) {
-    throw new Error("API Key is missing from environment variables.");
+    console.error("API Key is missing. Make sure API_KEY is set in environment variables.");
+    throw new Error("API Key is missing.");
   }
   return new GoogleGenAI({ apiKey });
 };
