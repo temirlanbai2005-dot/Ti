@@ -13,12 +13,12 @@ import {
 
 // Helper to create the Gemini client securely
 const createGeminiClient = () => {
-  // The API key must be obtained exclusively from the environment variable process.env.API_KEY
+  // Use process.env.API_KEY exclusively as per Google GenAI SDK guidelines
   const apiKey = process.env.API_KEY;
   
   if (!apiKey) {
-    console.error("API Key is missing.");
-    throw new Error("API Key is missing.");
+    console.error("API Key is missing. Make sure API_KEY is set in Environment Variables.");
+    throw new Error("API Key is missing. Please check Environment Variables.");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -57,7 +57,7 @@ const performGoogleSearch = async (query: string): Promise<string> => {
     return response.text || "No search results found.";
   } catch (error) {
     console.warn("Search Bridge failed:", error);
-    return "Could not fetch online context. Ensure Cloud Gemini is active.";
+    return "Could not fetch online context. Ensure Cloud Gemini is active and API Key is valid.";
   }
 };
 
@@ -91,7 +91,7 @@ export const generatePost = async ({
       return response.text || "Error: No content generated.";
     } catch (error: any) {
       console.error("Gemini API Error:", error);
-      return `Error generating post: ${error.message}. Check your API Key.`;
+      return `Error generating post: ${error.message}. Check your API Key in Settings.`;
     }
   } else {
     let finalPrompt = `
@@ -104,6 +104,7 @@ export const generatePost = async ({
     `;
 
     if (useSearch) {
+      // Note: This still requires Gemini to perform the search first
       const googleResults = await performGoogleSearch(topic);
       finalPrompt += `\n\n=== REAL-TIME GOOGLE SEARCH DATA ===\n${googleResults}\n========================================`;
     }
@@ -409,8 +410,9 @@ async function generateWithCustomAPI(prompt: string, settings: AppSettings, syst
     };
     
     // Check if user is trying to hit localhost from a secure deployment
+    // This is the most common cause of "NetworkError" on Cloud Deployments
     if (window.location.protocol === 'https:' && settings.customApiUrl.includes('localhost')) {
-       return "Custom API Error: Cannot access Localhost (HTTP) from Render (HTTPS). This is a browser security restriction (Mixed Content). Please switch to 'Cloud Gemini' in Settings, or use a tunneling service (like Ngrok) for your local LLM.";
+       return "🛑 CONFIGURATION ERROR: You are running this app on the Cloud (Render/HTTPS), but trying to access a Local LLM (localhost). This is blocked by browser security. \n\n✅ SOLUTION: Go to Settings -> Select 'Cloud Gemini'.";
     }
 
     const response = await fetch(settings.customApiUrl, {
@@ -421,6 +423,6 @@ async function generateWithCustomAPI(prompt: string, settings: AppSettings, syst
     const data = await response.json();
     return data.choices?.[0]?.message?.content || "No response.";
   } catch (error: any) { 
-      return `Custom API Error: ${error.message}. If using Local LLM on Render, ensure you are not blocked by Mixed Content/CORS.`; 
+      return `Custom API Error: ${error.message}. (Did you select 'Local LLM' by accident in Settings?)`; 
   }
 }
